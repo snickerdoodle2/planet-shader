@@ -1,4 +1,5 @@
 use winit::{
+    dpi::PhysicalSize,
     event::*,
     event_loop::{ControlFlow, EventLoop},
     window::{Window, WindowBuilder},
@@ -11,6 +12,8 @@ use wgpu::util::DeviceExt;
 struct Vertex {
     position: [f32; 3],
 }
+
+const WINDOW_SIZE: u32 = 512;
 
 impl Vertex {
     const ATTRIBUTES: [wgpu::VertexAttribute; 1] = wgpu::vertex_attr_array![
@@ -119,11 +122,10 @@ impl State {
 
         surface.configure(&device, &config);
 
-        let texture_size = 128u32;
         let texture_desc = wgpu::TextureDescriptor {
             size: wgpu::Extent3d {
-                width: texture_size,
-                height: texture_size,
+                width: WINDOW_SIZE,
+                height: WINDOW_SIZE,
                 depth_or_array_layers: 1,
             },
             mip_level_count: 1,
@@ -297,7 +299,6 @@ impl State {
         });
         let num_indices = INDICES.len() as u32;
 
-
         Self {
             window,
             surface,
@@ -392,10 +393,7 @@ impl State {
             render_pass.set_pipeline(&self.render_pipeline);
             render_pass.set_bind_group(0, &self.texture_bind_group, &[]);
             render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-            render_pass.set_index_buffer(
-                self.index_buffer.slice(..),
-                wgpu::IndexFormat::Uint16,
-            );
+            render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
             render_pass.draw_indexed(0..self.num_indices, 0, 0..1);
         }
 
@@ -407,9 +405,15 @@ impl State {
 }
 
 pub async fn run() {
+    let size = PhysicalSize::new(WINDOW_SIZE * 3, WINDOW_SIZE * 3);
     env_logger::init();
     let event_loop = EventLoop::new();
-    let window = WindowBuilder::new().build(&event_loop).unwrap();
+    let window = WindowBuilder::new()
+        .with_title("Planet Shader")
+        .with_inner_size(size)
+        .with_resizable(false)
+        .build(&event_loop)
+        .unwrap();
 
     let mut state = State::new(window).await;
 
