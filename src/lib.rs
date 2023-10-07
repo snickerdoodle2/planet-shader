@@ -45,6 +45,25 @@ const VERTICES: &[Vertex] = &[
 
 const INDICES: &[u16] = &[0, 1, 2, 0, 2, 3];
 
+#[repr(C)]
+#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+struct FrameUniform {
+    t: f32,
+}
+
+impl FrameUniform {
+    fn new() -> Self {
+        Self { t: 0.0 }
+    }
+
+    fn next(&mut self) {
+        self.t += 0.0001;
+        if self.t > 1.0 {
+            self.t = 0.0;
+        }
+    }
+}
+
 struct State {
     surface: wgpu::Surface,
     device: wgpu::Device,
@@ -61,6 +80,9 @@ struct State {
     texture_bind_group: wgpu::BindGroup,
     vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
+    frame_buffer: wgpu::Buffer,
+    frame_uniform: FrameUniform,
+    frame_bind_group: wgpu::BindGroup,
     num_indices: u32,
 }
 
@@ -156,10 +178,43 @@ impl State {
             source: wgpu::ShaderSource::Wgsl(include_str!("texture_shader.wgsl").into()),
         });
 
+        let frame_uniform = FrameUniform::new();
+        let frame_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Frame Uniform Buffer"),
+            contents: bytemuck::cast_slice(&[frame_uniform]),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+
+        let frame_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("Frame Bind Group Layout"),
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+            });
+
+        let frame_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor{
+            layout: &frame_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry{
+                binding: 0,
+                resource: frame_buffer.as_entire_binding(),
+            }],
+            label: Some("Frame Bind Group"),
+        });
+
         let texture_render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Texture Pipeline Layout"),
-                bind_group_layouts: &[],
+                bind_group_layouts: &[
+                    &frame_bind_group_layout,
+                ],
                 push_constant_ranges: &[],
             });
 
@@ -299,6 +354,7 @@ impl State {
         });
         let num_indices = INDICES.len() as u32;
 
+
         Self {
             window,
             surface,
@@ -313,6 +369,9 @@ impl State {
             vertex_buffer,
             index_buffer,
             num_indices,
+            frame_bind_group,
+            frame_buffer,
+            frame_uniform
         }
     }
 
@@ -334,7 +393,8 @@ impl State {
     }
 
     fn update(&mut self) {
-        ()
+        self.frame_uniform.next();
+        self.queue.write_buffer(&self.frame_buffer, 0, bytemuck::cast_slice(&[self.frame_uniform]));
     }
 
     fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
@@ -369,6 +429,7 @@ impl State {
             });
             render_pass.set_pipeline(&self.texture_render_pipeline);
             render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+            render_pass.set_bind_group(0, &self.frame_bind_group, &[]);
             render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
             render_pass.draw_indexed(0..self.num_indices, 0, 0..1);
         }
@@ -405,7 +466,7 @@ impl State {
 }
 
 pub async fn run() {
-    let size = PhysicalSize::new(WINDOW_SIZE * 3, WINDOW_SIZE * 3);
+    let size = PhysicalSize::new(1536, 1536);
     env_logger::init();
     let event_loop = EventLoop::new();
     let window = WindowBuilder::new()
@@ -445,6 +506,7 @@ pub async fn run() {
             }
         }
         Event::RedrawRequested(window_id) if window_id == state.window().id() => {
+            state.frame_uniform.next();
             state.update();
             match state.render() {
                 Ok(_) => {}
