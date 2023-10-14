@@ -13,7 +13,7 @@ struct Vertex {
     position: [f32; 3],
 }
 
-const WINDOW_SIZE: u32 = 512;
+const IMG_SIZE: u32 = 512;
 
 impl Vertex {
     const ATTRIBUTES: [wgpu::VertexAttribute; 1] = wgpu::vertex_attr_array![
@@ -146,8 +146,8 @@ impl State {
 
         let texture_desc = wgpu::TextureDescriptor {
             size: wgpu::Extent3d {
-                width: WINDOW_SIZE,
-                height: WINDOW_SIZE,
+                width: IMG_SIZE,
+                height: IMG_SIZE,
                 depth_or_array_layers: 1,
             },
             mip_level_count: 1,
@@ -200,9 +200,9 @@ impl State {
                 }],
             });
 
-        let frame_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor{
+        let frame_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &frame_bind_group_layout,
-            entries: &[wgpu::BindGroupEntry{
+            entries: &[wgpu::BindGroupEntry {
                 binding: 0,
                 resource: frame_buffer.as_entire_binding(),
             }],
@@ -212,9 +212,7 @@ impl State {
         let texture_render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Texture Pipeline Layout"),
-                bind_group_layouts: &[
-                    &frame_bind_group_layout,
-                ],
+                bind_group_layouts: &[&frame_bind_group_layout],
                 push_constant_ranges: &[],
             });
 
@@ -354,7 +352,6 @@ impl State {
         });
         let num_indices = INDICES.len() as u32;
 
-
         Self {
             window,
             surface,
@@ -371,7 +368,7 @@ impl State {
             num_indices,
             frame_bind_group,
             frame_buffer,
-            frame_uniform
+            frame_uniform,
         }
     }
 
@@ -394,7 +391,11 @@ impl State {
 
     fn update(&mut self) {
         self.frame_uniform.next();
-        self.queue.write_buffer(&self.frame_buffer, 0, bytemuck::cast_slice(&[self.frame_uniform]));
+        self.queue.write_buffer(
+            &self.frame_buffer,
+            0,
+            bytemuck::cast_slice(&[self.frame_uniform]),
+        );
     }
 
     fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
@@ -466,7 +467,8 @@ impl State {
 }
 
 pub async fn run() {
-    let size = PhysicalSize::new(1536, 1536);
+    let window_size: u32 = (f32::ceil(1400.0 / (IMG_SIZE as f32)) as u32) * IMG_SIZE;
+    let size = PhysicalSize::new(window_size, window_size);
     env_logger::init();
     let event_loop = EventLoop::new();
     let window = WindowBuilder::new()

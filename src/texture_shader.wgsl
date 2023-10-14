@@ -1,6 +1,8 @@
-const planet_radius: f32 = 0.5;
-const cloud_radius: f32 = 0.55;
+const planet_radius: f32 = 0.6;
+const cloud_radius: f32 = 0.65;
 const img_size: f32 = 512.0;
+const light_src: vec3<f32> = vec3<f32>(1.0, 1.0, 1.0);
+
 struct VertexInput {
     @location(0) position: vec3<f32>
 }
@@ -9,6 +11,59 @@ struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
     @location(0) color: vec4<f32>
 }
+
+struct Color {
+    one: vec3<f32>,
+    two: vec3<f32>,
+    three: vec3<f32>,
+    four: vec3<f32>,
+    five: vec3<f32>,
+}
+
+const Colors = array<Color, 6>(
+    Color (
+        vec3<f32>(0.91, 0.44, 0.32),
+        vec3<f32>(0.73, 0.35, 0.25),
+        vec3<f32>(0.55, 0.26, 0.19),
+        vec3<f32>(0.36, 0.17, 0.13),
+        vec3<f32>(0.18, 0.09, 0.06),
+    ),
+    Color (
+        vec3<f32>(0.96, 0.64, 0.38),
+        vec3<f32>(0.76, 0.51, 0.31),
+        vec3<f32>(0.57, 0.38, 0.23),
+        vec3<f32>(0.38, 0.25, 0.15),
+        vec3<f32>(0.19, 0.13, 0.07),
+    ),
+    Color (
+        vec3<f32>(0.91, 0.77, 0.42),
+        vec3<f32>(0.73, 0.62, 0.33),
+        vec3<f32>(0.55, 0.46, 0.25),
+        vec3<f32>(0.36, 0.31, 0.16),
+        vec3<f32>(0.18, 0.15, 0.08),
+    ),
+    Color (
+        vec3<f32>(0.16, 0.62, 0.56),
+        vec3<f32>(0.13, 0.49, 0.45),
+        vec3<f32>(0.10, 0.37, 0.34),
+        vec3<f32>(0.07, 0.25, 0.22),
+        vec3<f32>(0.03, 0.12, 0.11),
+    ),
+    Color (
+        vec3<f32>(0.15, 0.27, 0.33),
+        vec3<f32>(0.12, 0.22, 0.26),
+        vec3<f32>(0.09, 0.16, 0.20),
+        vec3<f32>(0.06, 0.11, 0.13),
+        vec3<f32>(0.03, 0.05, 0.07),
+    ),
+    Color (
+        vec3<f32>(0.50, 0.93, 0.60),
+        vec3<f32>(0.40, 0.75, 0.48),
+        vec3<f32>(0.30, 0.56, 0.36),
+        vec3<f32>(0.20, 0.37, 0.24),
+        vec3<f32>(0.10, 0.18, 0.12),
+    ),
+);
 
 
 @vertex
@@ -59,10 +114,6 @@ fn noise(p: vec4<f32>) -> f32 {
     return s / 2.0;
 }
 
-struct Colors {
-    water: vec3<f32>,
-}
-
 fn rotate_point(p: vec3<f32>, t: f32) -> vec3<f32> {
     let pi = atan(1.0) * 4.0;
     let angle = 2.0 * pi * t;
@@ -76,20 +127,39 @@ fn rotate_point(p: vec3<f32>, t: f32) -> vec3<f32> {
     return matrix * p;
 }
 
-fn map_color(depth: f32) -> vec3<f32> {
+fn map_planet_color(depth: f32) -> Color {
     if depth < 0.10 {
-        return vec3<f32>(0.11, 0.16, 0.40);
-    } else if depth < 0.25 {
-        return vec3<f32>(0.29, 0.35, 0.53);
+        return Colors[4];
     } else if depth < 0.30 {
-        return vec3<f32>(0.80, 0.70, 0.25);
+        return Colors[3];
     } else if depth < 0.50 {
-        return vec3<f32>(0.36, 0.50, 0.27);
+        return Colors[2];
     } else if depth < 0.70 {
-        return vec3<f32>(0.24, 0.38, 0.21);
+        return Colors[1];
     } else {
-        return vec3<f32>(0.76, 0.78, 0.79);
+        return Colors[0];
     }
+}
+
+fn get_shade(color: Color, shade: f32) -> vec3<f32> {
+    if shade > 0.5 {
+        return color.one;
+    } else if shade > 0.3 {
+        return color.two;
+    } else if shade > 0.1 {
+        return color.three;
+    } else if shade > -0.10 {
+        return color.four;
+    } else {
+        return color.five;
+    }
+}
+
+fn get_lightness(p: vec3<f32>) -> f32 {
+    let normalized = p / length(p);
+    let light_norm = light_src / length(light_src);
+
+    return dot(normalized, light_norm);
 }
 
 struct FrameUniform {
@@ -107,28 +177,32 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     var color: vec4<f32> = vec4<f32>(0.0, 0.0, 0.0, 1.0);
 
     if distance(vec2<f32>(x, y), vec2<f32>(0.0)) < planet_radius {
-        var pos: vec3<f32> = vec3<f32>(
+        let pos = vec3<f32>(
             x,
             y,
             sqrt(planet_radius*planet_radius - x*x - y*y)
         );
-        pos = rotate_point(pos, frame.t);
+        let new_pos = rotate_point(pos, frame.t);
 
-        let shade = pow(noise(vec4<f32>(pos, 0.1) * 10.0), 2.0);
-        color = vec4<f32>(map_color(shade), 1.0);
+        let depth = pow(noise(vec4<f32>(new_pos, 0.1) * 10.0), 2.0);
+        let color_tmp = map_planet_color(depth);
+        let light_level = get_lightness(pos);
+        color = vec4<f32>(get_shade(color_tmp, light_level), 1.0);
     }
 
+
     if distance(vec2<f32>(x, y), vec2<f32>(0.0)) < cloud_radius {
-        var pos: vec3<f32> = vec3<f32>(
+        let pos = vec3<f32>(
             x,
             y,
             sqrt(cloud_radius*cloud_radius - x*x - y*y)
         );
-        pos = rotate_point(pos, frame.t);
+        let new_pos = rotate_point(pos, frame.t);
 
-        let shade = pow(noise(vec4<f32>(pos, frame.t) * 10.0), 2.0);
+        let shade = pow(noise(vec4<f32>(new_pos, frame.t) * 10.0), 2.0);
         if shade > 0.3 {
-            color = vec4<f32>(0.95, 0.95, 0.95, 1.0);
+            let light_level = get_lightness(pos);
+            color = vec4<f32>(get_shade(Colors[5], light_level), 1.0);
         }
     }
     return color;
